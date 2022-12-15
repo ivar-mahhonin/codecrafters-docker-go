@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -16,12 +17,13 @@ func main() {
 	address := fmt.Sprintf("%s:%s", CONN_HOST, CONN_PORT)
 
 	listener, err := net.Listen(CONN_TYPE, address)
+
 	if err != nil {
-		fmt.Println(fmt.Sprintf("Failed to bind to port %s", CONN_PORT))
+		fmt.Printf("Failed to bind to port %s \n", CONN_PORT)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Listening on: %s", address)
+	fmt.Printf("Listening on: %s \n", address)
 
 	for {
 		conn, err := listener.Accept()
@@ -30,21 +32,47 @@ func main() {
 			os.Exit(1)
 		}
 
+		go handleConnection(conn)
+	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	for {
 		buf := make([]byte, 1024)
-		_, err = conn.Read(buf)
-		if err != nil {
-			fmt.Println("Failed reading from connection:", err)
-			return
+
+		if _, err := conn.Read(buf); err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				fmt.Println("Failed reading from connection:", err)
+				os.Exit(1)
+			}
 		}
 
-		fmt.Println("Received read: ", string(buf))
+		message := string(buf)
 
-		_, err = conn.Write([]byte("+PONG\r\n"))
+		fmt.Println("Received read: ", message)
+
+		response := makeResponseMessage(message)
+		fmt.Println("Sending response:", response)
+
+		_, err := conn.Write([]byte(response))
 		if err != nil {
 			fmt.Println("Failed write:", err)
-			return
 		}
-
-		conn.Close()
 	}
+}
+
+func makeResponseMessage(message string) string {
+	response := ""
+	switch message {
+	default:
+		response = stringToReply("PONG")
+	}
+	return response
+}
+
+func stringToReply(message string) string {
+	return fmt.Sprintf("+%s\r\n", message)
 }
