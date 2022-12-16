@@ -1,4 +1,4 @@
 run_server:
-	go run ./app/server.go
-run tests:
-	go test -v ./test/ -count=1
+	go run ./cmd/redisgo/main.go
+run_tests:
+	go test -v ./internal/server -count=1

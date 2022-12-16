@@ -1,3 +1,2 @@
-module redis-go
-
-go 1.18
+module github.com/ivar-mahhonin/redis-go
+go 1.19
