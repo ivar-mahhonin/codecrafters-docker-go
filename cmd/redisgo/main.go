@@ -1,14 +1,38 @@
 package main
 
-import server "github.com/ivar-mahhonin/redis-go/internal/server"
+import (
+	"fmt"
+	"log"
+	"os"
 
-const (
-	CONN_HOST = "localhost"
-	CONN_PORT = "6379"
-	CONN_TYPE = "tcp"
+	server "github.com/ivar-mahhonin/redis-go/internal/server"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	server := server.NewTcpServer(CONN_HOST, CONN_PORT)
+	host := envVariable("CONN_HOST")
+	port := envVariable("CONN_PORT")
+
+	println(host, port)
+
+	if host == "" || port == "" {
+		host = "localhost"
+		port = "6379"
+		log.Println("Host and port must be set. Using default values")
+	}
+
+	server := server.NewTcpServer(host, port)
 	server.Start()
+}
+
+func envVariable(key string) string {
+	dir, _ := os.Getwd()
+
+	err := godotenv.Load(fmt.Sprintf("%s/.env", dir))
+
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+
+	return os.Getenv(key)
 }
