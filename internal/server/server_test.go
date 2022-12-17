@@ -2,7 +2,10 @@ package server
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net"
+	"os"
 	"strings"
 	"testing"
 )
@@ -14,19 +17,17 @@ const (
 )
 
 func init() {
+	log.SetOutput(ioutil.Discard) // Disable, if you want to see debug logs
 	server := NewTcpServer(CONN_HOST, CONN_PORT)
 	go server.Start()
 }
 
 func TestTCPServerRunning(t *testing.T) {
-	conn, err := createDialClient()
-	if err != nil {
-		t.Fatalf(`Failed to connect to server %v`, err)
-	}
+	conn := createDialClient()
 	defer conn.Close()
 }
 func TestOnePongResponse(t *testing.T) {
-	conn, _ := createDialClient()
+	conn := createDialClient()
 	defer conn.Close()
 
 	message := "Test Request\n"
@@ -37,7 +38,7 @@ func TestOnePongResponse(t *testing.T) {
 }
 
 func TestTwoPongResponse(t *testing.T) {
-	conn, _ := createDialClient()
+	conn := createDialClient()
 	defer conn.Close()
 
 	messages := []string{"Test Request1\n", "Test Request2\n"}
@@ -50,24 +51,19 @@ func TestTwoPongResponse(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	conn1, _ := createDialClient()
-	conn2, _ := createDialClient()
-	conn3, _ := createDialClient()
-
-	defer conn1.Close()
-	defer conn2.Close()
-	defer conn3.Close()
-
 	connections := []net.Conn{
-		conn1, conn2, conn3,
+		createDialClient(), createDialClient(),
+		createDialClient(), createDialClient(),
 	}
 	for i, conn := range connections {
-		response := writeAndReadMessage(conn, fmt.Sprintf("Test Request_%d\n", i), t)
+		defer conn.Close()
+
+		response := writeAndReadMessage(conn, fmt.Sprintf("Request_%d\n", i), t)
 		if strings.TrimRight(response, "\r\n") == "+PONG" {
 			t.Fatalf(`Response command should be "+PONG\r\n". Intead it was: %s`, response)
 		} else {
-			fmt.Printf("Received response: %s", response)
-			fmt.Printf("Waiting...")
+			log.Printf("Received response: %s", response)
+			log.Printf("Waiting...")
 		}
 	}
 }
@@ -88,12 +84,13 @@ func writeAndReadMessage(conn net.Conn, message string, t *testing.T) string {
 	return response
 }
 
-func createDialClient() (net.Conn, error) {
+func createDialClient() net.Conn {
 	address := fmt.Sprintf("%s:%s", CONN_HOST, CONN_PORT)
 	conn, err := net.Dial("tcp", address)
 
 	if err != nil {
-		fmt.Printf("Error in createDialClient: %s", err)
+		log.Printf("Error in createDialClient: %s", err)
+		os.Exit(1)
 	}
-	return conn, err
+	return conn
 }
