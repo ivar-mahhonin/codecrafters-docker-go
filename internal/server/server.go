@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 type TcpServer struct {
@@ -74,9 +78,10 @@ func handleConnection(conn net.Conn) {
 
 		message := string(buf)
 
-		log.Println("Received read: ", message)
+		log.Println("Received read:\n", message)
 
-		response := makeResponseMessage(message)
+		response := convertReplCommandToResponse(message)
+
 		log.Println("Sending response:", response)
 
 		_, err := conn.Write([]byte(response))
@@ -88,15 +93,79 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func makeResponseMessage(message string) string {
+func convertReplCommandToResponse(message string) string {
+	var command []string
 	response := ""
-	switch message {
+	if isReplArray(message) {
+		cmd, err := extractArgumentsFromReplArray(message)
+		if err != nil {
+			log.Println("Failed to extract arguments from repl array")
+			response = makeErrorResponse("Failed to extract arguments from repl array")
+		} else {
+			command = cmd
+		}
+	} else {
+		command = []string{message}
+	}
+
+	if command != nil && response == "" {
+		response = makeResponseMessage(command)
+	}
+	return response
+}
+
+func isReplArray(command string) bool {
+	return strings.HasPrefix(command, "*")
+}
+
+func extractArgumentsFromReplArray(command string) ([]string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(command))
+	scanner.Scan()
+	numArgs, err := stringToInt(scanner.Text()[1:])
+
+	if err != nil {
+		log.Println("Failed to convert numArgs to int")
+		return nil, errors.New("Failed to convert numArgs to int")
+	}
+
+	arguments := make([]string, numArgs)
+
+	for i := 0; i < numArgs; i++ {
+		scanner.Scan()
+		argLength, err := stringToInt(scanner.Text()[1:])
+
+		if err != nil {
+			log.Println("Failed to convert numArgs to int")
+			return nil, errors.New("Failed to convert numArgs to int")
+		}
+
+		scanner.Scan()
+		arguments[i] = scanner.Text()[:argLength]
+	}
+
+	return arguments, nil
+}
+
+func makeErrorResponse(message string) string {
+	return fmt.Sprintf("-%s\r\n", message)
+}
+
+func makeResponseMessage(command []string) string {
+	response := ""
+	switch strings.ToLower(command[0]) {
 	default:
 		response = stringToReply("PONG")
+	case "echo":
+		response = stringToReply(command[1])
 	}
 	return response
 }
 
 func stringToReply(message string) string {
 	return fmt.Sprintf("+%s\r\n", message)
+}
+
+func stringToInt(str string) (int, error) {
+	i, err := strconv.Atoi(str)
+	return i, err
 }

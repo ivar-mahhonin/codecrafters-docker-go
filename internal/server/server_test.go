@@ -1,8 +1,8 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -17,9 +17,7 @@ const (
 )
 
 func init() {
-	log.SetOutput(ioutil.Discard) // Disable, if you want to see debug logs
-	server := NewTcpServer(CONN_HOST, CONN_PORT)
-	go server.Start()
+
 }
 
 func TestTCPServerRunning(t *testing.T) {
@@ -32,7 +30,7 @@ func TestOnePongResponse(t *testing.T) {
 
 	message := "Test Request\n"
 	response := writeAndReadMessage(conn, message, t)
-	if strings.TrimRight(response, "\r\n") == "+PONG" {
+	if response != "+PONG" {
 		t.Fatalf(`Response command should be "+PONG\r\n". Intead it was: %s`, response)
 	}
 }
@@ -44,7 +42,7 @@ func TestTwoPongResponse(t *testing.T) {
 	messages := []string{"Test Request1\n", "Test Request2\n"}
 	for _, message := range messages {
 		response := writeAndReadMessage(conn, message, t)
-		if strings.TrimRight(response, "\r\n") == "+PONG" {
+		if response != "+PONG" {
 			t.Fatalf(`Response command should be "+PONG\r\n". Intead it was: %s`, response)
 		}
 	}
@@ -59,12 +57,24 @@ func TestConcurrentAccess(t *testing.T) {
 		defer conn.Close()
 
 		response := writeAndReadMessage(conn, fmt.Sprintf("Request_%d\n", i), t)
-		if strings.TrimRight(response, "\r\n") == "+PONG" {
+		if response != "+PONG" {
 			t.Fatalf(`Response command should be "+PONG\r\n". Intead it was: %s`, response)
 		} else {
 			log.Printf("Received response: %s", response)
 			log.Printf("Waiting...")
 		}
+	}
+}
+
+func TestEchoResponse(t *testing.T) {
+	conn := createDialClient()
+	defer conn.Close()
+
+	message := "*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"
+	response := writeAndReadMessage(conn, message, t)
+
+	if response != "+hey" {
+		t.Fatalf(`Response command should be "+hey". Intead it was: %s`, response)
 	}
 }
 
@@ -80,8 +90,8 @@ func writeAndReadMessage(conn net.Conn, message string, t *testing.T) string {
 		t.Fatalf(`Reading response from redis-go failed %v`, read_err)
 		return ""
 	}
-	response := string(received)
-	return response
+	response := string(bytes.Trim(received, "\x00"))
+	return strings.TrimRight(response, "\r\n")
 }
 
 func createDialClient() net.Conn {
