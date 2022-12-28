@@ -13,11 +13,11 @@ import (
 const (
 	CONN_HOST = "localhost"
 	CONN_PORT = "6379"
-	CONN_TYPE = "tcp"
 )
 
 func init() {
-
+	server := NewTcpServer(CONN_HOST, CONN_PORT)
+	go server.Start()
 }
 
 func TestTCPServerRunning(t *testing.T) {
@@ -75,6 +75,30 @@ func TestEchoResponse(t *testing.T) {
 
 	if response != "+hey" {
 		t.Fatalf(`Response command should be "+hey". Intead it was: %s`, response)
+	}
+}
+
+func TestSetCommand(t *testing.T) {
+	conn := createDialClient()
+	defer conn.Close()
+
+	message := "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"
+	response := writeAndReadMessage(conn, message, t)
+
+	if response != "+OK" {
+		t.Fatalf(`Response command should be "+OK". Intead it was: %s`, response)
+	}
+}
+
+func TestGetCommand(t *testing.T) {
+	conn := createDialClient()
+	defer conn.Close()
+
+	message := "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"
+	response := writeAndReadMessage(conn, message, t)
+
+	if response != "+value" {
+		t.Fatalf(`Response command should be "+OK". Intead it was: %s`, response)
 	}
 }
 

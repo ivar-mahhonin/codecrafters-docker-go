@@ -10,7 +10,21 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	redisStore "github.com/ivar-mahhonin/redis-go/internal/store"
 )
+
+const (
+	CMND_ECHO = "echo"
+	CMND_GET  = "get"
+	CMND_SET  = "set"
+)
+
+const (
+	BUFFER_SIZE = 1024
+)
+
+var store = redisStore.GetStore()
 
 type TcpServer struct {
 	host string
@@ -64,7 +78,7 @@ func (server *TcpServer) Listen(listener net.Listener) {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	for {
-		buf := make([]byte, 1024)
+		buf := make([]byte, BUFFER_SIZE)
 
 		if _, err := conn.Read(buf); err != nil {
 			if err == io.EOF {
@@ -80,7 +94,7 @@ func handleConnection(conn net.Conn) {
 
 		log.Println("Received read:\n", message)
 
-		response := convertReplCommandToResponse(message)
+		response := parseAndExecuteCommand(message)
 
 		log.Println("Sending response:", response)
 
@@ -93,7 +107,7 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func convertReplCommandToResponse(message string) string {
+func parseAndExecuteCommand(message string) string {
 	var command []string
 	response := ""
 	if isReplArray(message) {
@@ -109,7 +123,7 @@ func convertReplCommandToResponse(message string) string {
 	}
 
 	if command != nil && response == "" {
-		response = makeResponseMessage(command)
+		response = executeCommand(command)
 	}
 	return response
 }
@@ -125,7 +139,7 @@ func extractArgumentsFromReplArray(command string) ([]string, error) {
 
 	if err != nil {
 		log.Println("Failed to convert numArgs to int")
-		return nil, errors.New("Failed to convert numArgs to int")
+		return nil, errors.New("failed to convert numArgs to int")
 	}
 
 	arguments := make([]string, numArgs)
@@ -136,7 +150,7 @@ func extractArgumentsFromReplArray(command string) ([]string, error) {
 
 		if err != nil {
 			log.Println("Failed to convert numArgs to int")
-			return nil, errors.New("Failed to convert numArgs to int")
+			return nil, errors.New("failed to convert numArgs to int")
 		}
 
 		scanner.Scan()
@@ -150,15 +164,31 @@ func makeErrorResponse(message string) string {
 	return fmt.Sprintf("-%s\r\n", message)
 }
 
-func makeResponseMessage(command []string) string {
+func executeCommand(command []string) string {
 	response := ""
 	switch strings.ToLower(command[0]) {
 	default:
 		response = stringToReply("PONG")
-	case "echo":
+	case CMND_ECHO:
 		response = stringToReply(command[1])
+	case CMND_SET:
+		key := command[1]
+		value := command[2]
+		response = setValue(key, value)
+	case CMND_GET:
+		key := command[1]
+		response = getVlaue(key)
 	}
 	return response
+}
+
+func setValue(key string, value string) string {
+	store.Set(key, value)
+	return stringToReply("OK")
+}
+
+func getVlaue(key string) string {
+	return stringToReply(store.Get(key))
 }
 
 func stringToReply(message string) string {

@@ -1,3 +1,4 @@
 .history
 ./app/client.go
 spawn_redis_client.sh
+.env

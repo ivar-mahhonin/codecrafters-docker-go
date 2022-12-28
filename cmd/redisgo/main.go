@@ -13,8 +13,6 @@ func main() {
 	host := envVariable("CONN_HOST")
 	port := envVariable("CONN_PORT")
 
-	println(host, port)
-
 	if host == "" || port == "" {
 		host = "localhost"
 		port = "6379"
