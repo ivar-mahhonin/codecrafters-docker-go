@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -16,8 +17,8 @@ const (
 )
 
 func init() {
-	server := NewTcpServer(CONN_HOST, CONN_PORT)
-	go server.Start()
+	//server := NewTcpServer(CONN_HOST, CONN_PORT)
+	//go server.Start()
 }
 
 func TestTCPServerRunning(t *testing.T) {
@@ -28,7 +29,7 @@ func TestOnePongResponse(t *testing.T) {
 	conn := createDialClient()
 	defer conn.Close()
 
-	message := "Test Request\n"
+	message := "PING\n"
 	response := writeAndReadMessage(conn, message, t)
 	if response != "+PONG" {
 		t.Fatalf(`Response command should be "+PONG\r\n". Intead it was: %s`, response)
@@ -99,6 +100,48 @@ func TestGetCommand(t *testing.T) {
 
 	if response != "+value" {
 		t.Fatalf(`Response command should be "+OK". Intead it was: %s`, response)
+	}
+}
+
+func TestSetCommandWithGettingExpiredValue(t *testing.T) {
+	conn := createDialClient()
+	defer conn.Close()
+
+	message := fmt.Sprintf("*5\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\nPX\r\n$3\r\n%s\r\n", "100")
+	response := writeAndReadMessage(conn, message, t)
+
+	if response != "+OK" {
+		t.Fatalf(`Response command should be "+OK". Intead it was: %s`, response)
+	}
+
+	time.Sleep(101 * time.Millisecond)
+
+	message = "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"
+	response = writeAndReadMessage(conn, message, t)
+
+	if response != "$-1" {
+		t.Fatalf(`Response command should be "$-1". Intead it was: %s`, response)
+	}
+}
+
+func TestSetCommandWithGettingNonExpiredValue(t *testing.T) {
+	conn := createDialClient()
+	defer conn.Close()
+
+	message := fmt.Sprintf("*5\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\nPX\r\n$5\r\n%s\r\n", "10000")
+	response := writeAndReadMessage(conn, message, t)
+
+	if response != "+OK" {
+		t.Fatalf(`Response command should be "+OK". Intead it was: %s`, response)
+	}
+
+	time.Sleep(99 * time.Millisecond)
+
+	message = "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"
+	response = writeAndReadMessage(conn, message, t)
+
+	if response != "+value" {
+		t.Fatalf(`Response command should be "+value". Intead it was: %s`, response)
 	}
 }
 

@@ -3,41 +3,57 @@ package store
 import (
 	"log"
 	"sync"
+	"time"
 )
 
-var store *redisStore
+var rStore *redisStore
 var once sync.Once
 var mutex sync.Mutex
 
 type Store interface {
-	Get(key string) string
-	Set(key string, value string)
+	Get(key string) (string, bool)
+	Set(key string, value string, expiration time.Time)
 }
 
+type Value struct {
+	value      string
+	expiration time.Time
+}
 type redisStore struct {
-	store map[string]string
+	store map[string]Value
 }
 
-func (c redisStore) Get(key string) string {
+func (c redisStore) Get(key string) (string, bool) {
 	mutex.Lock()
-	val := c.store[key]
+	defer mutex.Unlock()
+	storeValue := c.store[key]
 	log.Printf("Value fetched: store[%s]", key)
-	mutex.Unlock()
-	return val
+	if storeValue.isExpired() {
+		delete(c.store, key)
+		return storeValue.value, false
+	}
+	return storeValue.value, true
 }
 
-func (c redisStore) Set(key, value string) {
+func (c redisStore) Set(key, value string, expiration time.Time) {
 	mutex.Lock()
-	c.store[key] = value
-	log.Printf("Value stored: store[%s]=%s", key, value)
-	mutex.Unlock()
+	defer mutex.Unlock()
+	c.store[key] = Value{value, expiration}
+	log.Printf("Value stored: store[%s]=%s, px=%s", key, value, expiration)
 }
 
 func GetStore() Store {
 	once.Do(func() {
-		store = &redisStore{}
-		store.store = make(map[string]string)
+		rStore = &redisStore{}
+		rStore.store = make(map[string]Value)
 		log.Println("Store created")
 	})
-	return *store
+	return *rStore
+}
+
+func (v Value) isExpired() bool {
+	if v.expiration.IsZero() {
+		return false
+	}
+	return v.expiration.Before(time.Now())
 }

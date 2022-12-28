@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -10,14 +9,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	redisStore "github.com/ivar-mahhonin/redis-go/internal/store"
 )
 
 const (
-	CMND_ECHO = "echo"
-	CMND_GET  = "get"
-	CMND_SET  = "set"
+	CMD_PING = "ping"
+	CMD_ECHO = "echo"
+	CMD_GET  = "get"
+	CMD_SET  = "set"
+	CMD_PX   = "px"
 )
 
 const (
@@ -40,18 +42,13 @@ func (server *TcpServer) Start() {
 		log.Println("Host and port must be set")
 		stop()
 	}
-
 	address := fmt.Sprintf("%s:%s", server.host, server.port)
-
 	listener, err := net.Listen("tcp", address)
-
 	if err != nil {
 		log.Printf("Failed to bind to port %s \n", server.port)
 		stop()
 	}
-
 	log.Printf("Server is listening on: %s \n", address)
-
 	server.Listen(listener)
 }
 
@@ -119,7 +116,7 @@ func parseAndExecuteCommand(message string) string {
 			command = cmd
 		}
 	} else {
-		command = []string{message}
+		command = []string{strings.Replace(message, "\n", "", -1)}
 	}
 
 	if command != nil && response == "" {
@@ -128,74 +125,63 @@ func parseAndExecuteCommand(message string) string {
 	return response
 }
 
-func isReplArray(command string) bool {
-	return strings.HasPrefix(command, "*")
-}
-
-func extractArgumentsFromReplArray(command string) ([]string, error) {
-	scanner := bufio.NewScanner(strings.NewReader(command))
-	scanner.Scan()
-	numArgs, err := stringToInt(scanner.Text()[1:])
-
-	if err != nil {
-		log.Println("Failed to convert numArgs to int")
-		return nil, errors.New("failed to convert numArgs to int")
-	}
-
-	arguments := make([]string, numArgs)
-
-	for i := 0; i < numArgs; i++ {
-		scanner.Scan()
-		argLength, err := stringToInt(scanner.Text()[1:])
-
-		if err != nil {
-			log.Println("Failed to convert numArgs to int")
-			return nil, errors.New("failed to convert numArgs to int")
-		}
-
-		scanner.Scan()
-		arguments[i] = scanner.Text()[:argLength]
-	}
-
-	return arguments, nil
-}
-
-func makeErrorResponse(message string) string {
-	return fmt.Sprintf("-%s\r\n", message)
-}
-
 func executeCommand(command []string) string {
 	response := ""
 	switch strings.ToLower(command[0]) {
 	default:
 		response = stringToReply("PONG")
-	case CMND_ECHO:
+	case CMD_ECHO:
 		response = stringToReply(command[1])
-	case CMND_SET:
+	case CMD_SET:
 		key := command[1]
 		value := command[2]
-		response = setValue(key, value)
-	case CMND_GET:
+		if isCommandWithExpiration(command) {
+			exp, err := makeExpirationFromString(command[4])
+			if err != nil {
+				response = makeErrorResponse(err.Error())
+				break
+			}
+			response = setStoreValueWithExpiration(key, value, exp)
+		} else {
+			response = setStoreValueWithoutExpiration(key, value)
+		}
+	case CMD_GET:
 		key := command[1]
-		response = getVlaue(key)
+		value, found := getStoreValue(key)
+		if !found {
+			response = makeNullValueResponse()
+		} else {
+			response = stringToReply(value)
+		}
 	}
 	return response
 }
 
-func setValue(key string, value string) string {
-	store.Set(key, value)
+func isCommandWithExpiration(command []string) bool {
+	return len(command) >= 5 && strings.ToLower(command[3]) == CMD_PX && command[4] != ""
+}
+
+func makeExpirationFromString(expiration string) (time.Time, error) {
+	milliseconds, err := strconv.ParseInt(expiration, 10, 64)
+
+	if err != nil {
+		return time.Time{}, errors.New(fmt.Sprintf("Could not parse expiration time. PX is not integer: %s", expiration))
+	}
+
+	return time.Now().Add(time.Duration(milliseconds) * time.Millisecond), nil
+}
+
+func setStoreValueWithoutExpiration(key string, value string) string {
+	var expiration time.Time
+	store.Set(key, value, expiration)
 	return stringToReply("OK")
 }
 
-func getVlaue(key string) string {
-	return stringToReply(store.Get(key))
+func setStoreValueWithExpiration(key string, value string, expiration time.Time) string {
+	store.Set(key, value, expiration)
+	return stringToReply("OK")
 }
 
-func stringToReply(message string) string {
-	return fmt.Sprintf("+%s\r\n", message)
-}
-
-func stringToInt(str string) (int, error) {
-	i, err := strconv.Atoi(str)
-	return i, err
+func getStoreValue(key string) (string, bool) {
+	return store.Get(key)
 }
